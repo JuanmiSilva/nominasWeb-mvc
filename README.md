@@ -1,50 +1,9 @@
-# nominasWeb – Refactorización a MVC con Front Controller
+He refactorizado la aplicación de nóminas a MVC con un único servlet controlador (FrontController, en /empleados), que recibe todas las peticiones y reenvía a las vistas JSP, ahora en WEB-INF/views. Patrones utilizados:
 
-**Autor:** Juan Miguel Silva Martín · 2º DAW · Unidad 3
+Front Controller (controller/FrontController.java): es el único punto de entrada de la aplicación. Centraliza la gestión de errores y el reenvío a las vistas, y evita tener servlets sueltos con código repetido.
 
-## Qué se ha hecho
+Command (controller/command/*): cada opción (listar, salario, filtrar...) es una clase propia que implementa la interfaz Command. Así desaparece el switch gigante del controlador y añadir una opción no obliga a modificarlo.
 
-La aplicación de la unidad 2 tenía un servlet (`Controller`) con un `switch` gigante que mezclaba la lectura de parámetros, la llamada a los DAO y la elección de la vista. Se ha reorganizado según MVC:
+Factory (controller/CommandFactory.java): crea el comando que corresponde al parámetro opcion. El controlador no conoce las clases concretas y la decisión de qué objeto crear queda en un único sitio.
 
-| Capa | Contenido |
-|---|---|
-| **Modelo** | `modelo` (Persona, Empleado, Nomina, DatosNoCorrectosException), `dao`, `service` |
-| **Vista** | JSP en `/WEB-INF/views` (ya no se pueden pedir directamente desde el navegador) |
-| **Controlador** | `controller.FrontController` + `controller.CommandFactory` + `controller.command.*` |
-
-Flujo de una petición: `index.html` → `/empleados?opcion=X` → `EncodingFilter` → `LoggingFilter` → `FrontController` → `CommandFactory` → `Command` → `EmpleadoService` → DAO → atributo en la petición → JSP.
-
-## Patrones ya presentes en la unidad 2 (no cuentan como nuevos)
-
-- **DAO**: `EmpleadoDAO`, `NominasDAO`.
-- **Objeto de dominio / herencia**: `Persona` ← `Empleado`.
-
-## Patrones nuevos (al menos 3 que no estaban en la unidad 2)
-
-### Front Controller (exigido por el enunciado) — `controller/FrontController.java`
-**Dónde:** único servlet de la aplicación (`@WebServlet("/empleados")`), atiende GET y POST.
-**Por qué:** centraliza la entrada de todas las peticiones en un punto (gestión de errores 400/500, forward a la vista) y evita servlets sueltos con código repetido. Además las JSP están en `WEB-INF`, así que es imposible saltarse el controlador.
-
-### 1. Command — `controller/command/*`
-**Dónde:** interfaz `Command` y una clase por opción: `ListarCommand`, `SalarioCommand`, `MostrarSalarioCommand`, `ModificarCommand`, `FiltrarCommand` (más `MenuCommand` y `OpcionDesconocidaCommand`).
-**Por qué:** cada acción queda encapsulada en su propia clase, pequeña y fácil de probar. El `switch` del controlador antiguo desaparece y añadir una opción nueva no obliga a modificar el `FrontController`.
-
-### 2. Factory — `controller/CommandFactory.java`
-**Dónde:** `CommandFactory.getCommand(opcion)` devuelve el `Command` que corresponde al parámetro `opcion`.
-**Por qué:** el controlador no conoce las clases concretas; la decisión de «qué objeto crear» está en un único sitio. Sin opción devuelve el menú y con una opción inválida devuelve un comando que responde 404 (antes un `opcion` nulo provocaba un `NullPointerException`).
-
-### 3. Singleton — `dao/Conexion.java`
-**Dónde:** constructor privado y `Conexion.getInstance()`; los DAO piden las conexiones con `Conexion.getInstance().getConnection()`.
-**Por qué:** la carga del driver y la lectura de la configuración (URL, usuario, contraseña, sobrescribibles con variables de entorno `DB_URL`, `DB_USER`, `DB_PASSWORD`) se hace una sola vez y en un solo punto, en lugar de repetirse en cada conexión.
-
-## Otros cambios y correcciones
-
-- `DatosNoCorrectosException` pasa de `controller` a `modelo`: el modelo no debe depender del controlador.
-- `NominasDAO.actualizarNomina`: los parámetros del `UPDATE` estaban invertidos (nómina y DNI).
-- `mostrarSalario.jsp`: taglib actualizado a `jakarta.tags.core` (JSTL 3.0, igual que `listar.jsp`) y salida escapada con `<c:out>` (evita XSS con el DNI).
-
-## Cómo ejecutarlo
-
-1. MariaDB en `localhost:3307`, base de datos `empleados` (o definir `DB_URL`, `DB_USER`, `DB_PASSWORD`).
-2. `mvn clean package` y desplegar el WAR en Tomcat 10.1 (contexto `/empresa`).
-3. Abrir `http://localhost:8080/empresa/index.html`.
+Singleton (dao/Conexion.java): una única instancia que carga el driver y la configuración de la base de datos una sola vez, y de la que los DAO obtienen las conexiones.
